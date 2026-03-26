@@ -11,29 +11,23 @@ interface AlchemyTransfer {
   metadata?: { blockTimestamp?: string };
 }
 
-// Get exchange rate at a specific date from the history mock/Dune data
-// Instead of slow per-block RPC calls, we interpolate from daily rate history
-async function getRateAtDate(token: SupportedToken, dateStr: string, baseUrl: string): Promise<number | null> {
-  try {
-    const res = await fetch(`${baseUrl}/api/history?token=${token}&days=365`, {
-      next: { revalidate: 3600 },
-    });
-    const json = await res.json();
-    const history: { date: string; rate: number }[] = json?.data || [];
-    if (!history.length) return null;
-
-    // Find closest date in history
-    const target = new Date(dateStr).getTime();
-    let closest = history[0];
-    let minDiff = Infinity;
-    for (const point of history) {
-      const diff = Math.abs(new Date(point.date).getTime() - target);
-      if (diff < minDiff) { minDiff = diff; closest = point; }
-    }
-    return closest.rate;
-  } catch {
-    return null;
-  }
+// Approximate exchange rate at a given date using known APR growth model
+// ETHx launched ~May 2023 at ~1.0; grows ~4.5% APY
+// rsETH launched ~Jan 2024 at ~1.0; grows ~3.8% APY
+function approximateRateAtDate(token: SupportedToken, dateStr: string): number {
+  const launchDates: Record<SupportedToken, string> = {
+    ETHx: '2023-05-10',
+    rsETH: '2024-01-18',
+  };
+  const aprRates: Record<SupportedToken, number> = {
+    ETHx: 0.045,
+    rsETH: 0.038,
+  };
+  const launch = new Date(launchDates[token]).getTime();
+  const target = new Date(dateStr).getTime();
+  const daysSinceLaunch = Math.max(0, (target - launch) / 86400000);
+  const dailyRate = aprRates[token] / 365;
+  return 1.0 * Math.pow(1 + dailyRate, daysSinceLaunch);
 }
 
 export async function GET(req: NextRequest) {
@@ -83,15 +77,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ transfers: [], weighted_entry_rate: null });
     }
 
-    // Base URL for calling our own history API
-    const baseUrl = req.nextUrl.origin;
-
-    // Get rate for each transfer using date-based lookup (fast — no per-block RPC)
+    // Get rate for each transfer using date-based approximation (fast — no RPC calls)
     const enriched = await Promise.all(
       transfers.map(async (tx) => {
         const ts = tx.metadata?.blockTimestamp;
         const date = ts ? ts.split('T')[0] : null;
-        const rate = date ? await getRateAtDate(token, date, baseUrl) : null;
+        const rate = date ? approximateRateAtDate(token, date) : null;
 
         return {
           hash: tx.hash,

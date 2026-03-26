@@ -149,7 +149,7 @@ export default function EarningsDashboard() {
               <p className="text-xs text-zinc-500">Track your liquid staking rewards</p>
             </div>
           </div>
-          <Badge variant="outline" className="text-xs border-white/10 text-zinc-400">
+          <Badge variant="outline" className="text-xs border-white/10 text-zinc-400 hidden sm:inline-flex">
             Ethereum Mainnet
           </Badge>
         </div>
@@ -167,21 +167,23 @@ export default function EarningsDashboard() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Token tabs */}
-            <Tabs value={token} onValueChange={(v) => setToken(v as SupportedToken)}>
-              <TabsList className="bg-white/5 border border-white/10">
-                {(Object.keys(TOKEN_META) as SupportedToken[]).map(t => (
-                  <TabsTrigger
-                    key={t}
-                    value={t}
-                    className="data-[state=active]:bg-white/10 text-zinc-400 data-[state=active]:text-white text-sm"
-                  >
-                    <span className="w-2 h-2 rounded-full mr-1.5 inline-block" style={{ background: TOKEN_META[t].color }} />
-                    {TOKEN_META[t].name}
-                    <span className="ml-1.5 text-xs text-zinc-600">({TOKEN_META[t].protocol})</span>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            <div className="overflow-x-auto -mx-1 px-1">
+              <Tabs value={token} onValueChange={(v) => setToken(v as SupportedToken)}>
+                <TabsList className="bg-white/5 border border-white/10 flex w-max min-w-full">
+                  {(Object.keys(TOKEN_META) as SupportedToken[]).map(t => (
+                    <TabsTrigger
+                      key={t}
+                      value={t}
+                      className="data-[state=active]:bg-white/10 text-zinc-400 data-[state=active]:text-white text-sm flex-shrink-0"
+                    >
+                      <span className="w-2 h-2 rounded-full mr-1.5 inline-block flex-shrink-0" style={{ background: TOKEN_META[t].color }} />
+                      {TOKEN_META[t].name}
+                      <span className="ml-1 text-xs text-zinc-600 hidden sm:inline">({TOKEN_META[t].protocol})</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
 
             {/* Wallet input */}
             <div className="flex gap-2">
@@ -248,7 +250,7 @@ export default function EarningsDashboard() {
 
         {/* Stats */}
         {data && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
             <StatCard
               icon={<Coins className="w-4 h-4" style={{ color: meta.color }} />}
               label={`${token} Balance`}
@@ -305,7 +307,7 @@ export default function EarningsDashboard() {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Summary row */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
                   <p className="text-xs text-zinc-500 mb-1">Cost Basis</p>
                   <p className="text-sm font-semibold text-white">{fmt(position.cost_basis_eth, 4)} ETH</p>
@@ -332,17 +334,17 @@ export default function EarningsDashboard() {
                 <div>
                   <p className="text-xs text-zinc-500 mb-2 font-medium uppercase tracking-wider">Transaction History</p>
                   <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-                    <div className="grid grid-cols-5 text-xs text-zinc-600 pb-1 border-b border-white/5">
-                      <span>Date</span><span>Type</span><span className="text-right">Amount</span><span className="text-right">Rate</span><span className="text-right">Gain</span>
+                    <div className="grid grid-cols-4 sm:grid-cols-5 text-xs text-zinc-600 pb-1 border-b border-white/5">
+                      <span>Date</span><span>Type</span><span className="text-right">Amount</span><span className="text-right hidden sm:block">Rate</span><span className="text-right">Gain</span>
                     </div>
                     {position.events.map((ev, i) => (
-                      <div key={i} className="grid grid-cols-5 text-xs py-1 border-b border-white/[0.03] hover:bg-white/[0.02] rounded">
+                      <div key={i} className="grid grid-cols-4 sm:grid-cols-5 text-xs py-1 border-b border-white/[0.03] hover:bg-white/[0.02] rounded">
                         <span className="text-zinc-500">{ev.date}</span>
                         <span className={ev.type === 'buy' ? 'text-emerald-400' : 'text-amber-400'}>
                           {ev.type === 'buy' ? '↓ Buy' : '↑ Sell'}
                         </span>
                         <span className="text-right text-white">{fmt(ev.amount, 3)}</span>
-                        <span className="text-right text-zinc-400">{fmt(ev.rate_at_event, 5)}</span>
+                        <span className="text-right text-zinc-400 hidden sm:block">{fmt(ev.rate_at_event, 5)}</span>
                         <span className={`text-right ${ev.type === 'sell' ? (ev.realized_gain_eth >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-zinc-600'}`}>
                           {ev.type === 'sell' ? `${ev.realized_gain_eth >= 0 ? '+' : ''}${fmt(ev.realized_gain_eth, 4)}` : '—'}
                         </span>

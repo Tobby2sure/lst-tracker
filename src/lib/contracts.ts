@@ -80,5 +80,5 @@ export const TOKEN_META: Record<SupportedToken, { name: string; color: string; p
   ETHx: { name: 'ETHx', color: '#0ea5e9', protocol: 'Stader Labs' },
   rsETH: { name: 'rsETH', color: '#8b5cf6', protocol: 'KelpDAO' },
   agETH: { name: 'agETH', color: '#10b981', protocol: 'Kelp Gain' },
-  hgETH: { name: 'hgETH', color: '#f59e0b', protocol: 'Harvest Global' },
+  hgETH: { name: 'hgETH', color: '#f59e0b', protocol: 'High Growth ETH' },
 };

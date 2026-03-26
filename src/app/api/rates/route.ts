@@ -10,22 +10,22 @@ import {
   type SupportedToken,
 } from '@/lib/contracts';
 
-// Multiple public RPC fallbacks — tries each in order until one succeeds
-const RPC_URLS = [
-  process.env.ETHEREUM_RPC_URL,
-  'https://ethereum.publicnode.com',
-  'https://rpc.ankr.com/eth',
-  'https://cloudflare-eth.com',
-  'https://eth.llamarpc.com',
-].filter(Boolean) as string[];
+// Use Alchemy if key is available, otherwise fall back to public RPCs
+function getRpcUrls(): string[] {
+  const urls: string[] = [];
+  if (process.env.ETHEREUM_RPC_URL) urls.push(process.env.ETHEREUM_RPC_URL);
+  if (process.env.ALCHEMY_API_KEY) urls.push(`https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`);
+  urls.push('https://ethereum.publicnode.com', 'https://rpc.ankr.com/eth', 'https://cloudflare-eth.com');
+  return urls;
+}
 
 async function tryReadContract<T>(
   fn: (c: ReturnType<typeof createPublicClient>) => Promise<T>
 ): Promise<T> {
-  // Race all RPCs in parallel — fastest one wins, avoids sequential timeout
+  const urls = getRpcUrls();
   return Promise.any(
-    RPC_URLS.map(url => {
-      const c = createPublicClient({ chain: mainnet, transport: http(url, { timeout: 6000 }) });
+    urls.map(url => {
+      const c = createPublicClient({ chain: mainnet, transport: http(url, { timeout: 8000 }) });
       return fn(c);
     })
   );
@@ -36,7 +36,7 @@ async function getETHxRate(): Promise<number> {
     const result = await c.readContract({
       address: CONTRACTS.ETHx.staderOracle,
       abi: STADER_ORACLE_ABI,
-      functionName: 'getExchangeRate',
+      functionName: 'exchangeRate',
     });
     const totalETHBalance = result[1];
     const totalETHXSupply = result[2];

@@ -26,7 +26,7 @@ async function getRateAtBlock(token: SupportedToken, blockNumber: bigint): Promi
       const result = await client.readContract({
         address: CONTRACTS.ETHx.staderOracle,
         abi: STADER_ORACLE_ABI,
-        functionName: 'getExchangeRate',
+        functionName: 'exchangeRate',
         blockNumber,
       });
       const eth = result[1];

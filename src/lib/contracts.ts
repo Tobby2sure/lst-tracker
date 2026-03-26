@@ -4,7 +4,7 @@ export const CONTRACTS = {
   ETHx: {
     token: '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b' as `0x${string}`, // ETHx on Ethereum
     stakePoolManager: '0xcf5EA1b38380f6aF39068375516Daf40Ed70D69' as `0x${string}`,
-    staderOracle: '0xF64bAe65f6f2a5277571143A24FaaFDFC0C746cc' as `0x${string}`,
+    staderOracle: '0xF64bAe65f6f2a5277571143A24FaaFDFC0C2a737' as `0x${string}`,
   },
   rsETH: {
     token: '0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7' as `0x${string}`, // rsETH on Ethereum (KelpDAO)
@@ -12,10 +12,10 @@ export const CONTRACTS = {
   },
 } as const;
 
-// ETHx StaderOracle ABI — getExchangeRate returns (uint256 reportingBlockNumber, uint256 totalETHBalance, uint256 totalETHXSupply)
+// ETHx StaderOracle ABI — exchangeRate returns (uint256 reportingBlockNumber, uint256 totalETHBalance, uint256 totalETHXSupply)
 export const STADER_ORACLE_ABI = [
   {
-    name: 'getExchangeRate',
+    name: 'exchangeRate',
     type: 'function',
     stateMutability: 'view',
     inputs: [],

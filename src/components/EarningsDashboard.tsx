@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 import { Search, TrendingUp, Coins, DollarSign, Loader2, Info, ExternalLink } from 'lucide-react';
 import { TOKEN_META, type SupportedToken } from '@/lib/contracts';
+import type { PositionSummary } from '@/app/api/positions/route';
 
 interface RateData {
   token: string;
@@ -36,6 +37,8 @@ export default function EarningsDashboard() {
   const [entryLoading, setEntryLoading] = useState(false);
   const [entryDetected, setEntryDetected] = useState(false);
   const [transfers, setTransfers] = useState<{hash: string; date: string | null; amount: number; rate_at_block: number; eth_value_at_entry: number}[]>([]);
+  const [position, setPosition] = useState<PositionSummary | null>(null);
+  const [posLoading, setPosLoading] = useState(false);
   const [data, setData] = useState<RateData | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [histDays, setHistDays] = useState(90);
@@ -62,6 +65,14 @@ export default function EarningsDashboard() {
       if (rateJson.error) throw new Error(rateJson.error);
       setData(rateJson);
       setHistory(histJson.data || []);
+
+      // Fetch full position (WAC + realized/unrealized gains)
+      setPosLoading(true);
+      fetch(`/api/positions?wallet=${wallet}&token=${token}&rate=${rateJson.rate}`)
+        .then(r => r.json())
+        .then(p => { if (!p.error) setPosition(p); })
+        .catch(() => {})
+        .finally(() => setPosLoading(false));
 
       // Auto-detect entry rate from tx history (with 12s timeout)
       setEntryLoading(true);
@@ -243,23 +254,91 @@ export default function EarningsDashboard() {
               value={`${fmt(data.ethValue, 4)} ETH`}
               sub={fmtUsd(data.usdValue)}
             />
-            {earnings !== null ? (
+            {position ? (
               <StatCard
                 icon={<TrendingUp className="w-4 h-4 text-emerald-400" />}
-                label="Earned"
-                value={`+${fmt(earnings, 4)} ETH`}
-                sub={`${fmtUsd(earningsUsd || 0)} · +${earningsPct?.toFixed(2)}%`}
+                label="Total Earned"
+                value={`+${fmt(position.total_gain_eth, 4)} ETH`}
+                sub={fmtUsd(position.total_gain_eth * (data?.ethUsd || 0))}
                 highlight
+              />
+            ) : posLoading ? (
+              <StatCard
+                icon={<Loader2 className="w-4 h-4 animate-spin text-zinc-500" />}
+                label="Total Earned"
+                value="Computing..."
+                sub="Analyzing tx history"
               />
             ) : (
               <StatCard
                 icon={<Info className="w-4 h-4 text-zinc-500" />}
                 label="Earned"
                 value="—"
-                sub="Enter entry rate above"
+                sub="No history found"
               />
             )}
           </div>
+        )}
+
+        {/* Position breakdown */}
+        {position && (
+          <Card className="bg-white/[0.03] border-white/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm text-white">Position Breakdown — WAC Method</CardTitle>
+              <CardDescription className="text-xs text-zinc-500">
+                Weighted average cost tracks your true ETH basis across all entries and exits
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Summary row */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5">
+                  <p className="text-xs text-zinc-500 mb-1">Cost Basis</p>
+                  <p className="text-sm font-semibold text-white">{fmt(position.cost_basis_eth, 4)} ETH</p>
+                  <p className="text-xs text-zinc-600">WAC: {fmt(position.wac, 6)}</p>
+                </div>
+                <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                  <p className="text-xs text-zinc-500 mb-1">Unrealized</p>
+                  <p className={`text-sm font-semibold ${position.unrealized_gain_eth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {position.unrealized_gain_eth >= 0 ? '+' : ''}{fmt(position.unrealized_gain_eth, 4)} ETH
+                  </p>
+                  <p className="text-xs text-zinc-600">On current holdings</p>
+                </div>
+                <div className="p-3 rounded-lg bg-sky-500/5 border border-sky-500/10">
+                  <p className="text-xs text-zinc-500 mb-1">Realized</p>
+                  <p className={`text-sm font-semibold ${position.realized_gain_eth >= 0 ? 'text-sky-400' : 'text-red-400'}`}>
+                    {position.realized_gain_eth >= 0 ? '+' : ''}{fmt(position.realized_gain_eth, 4)} ETH
+                  </p>
+                  <p className="text-xs text-zinc-600">From exits</p>
+                </div>
+              </div>
+
+              {/* Transaction history */}
+              {position.events.length > 0 && (
+                <div>
+                  <p className="text-xs text-zinc-500 mb-2 font-medium uppercase tracking-wider">Transaction History</p>
+                  <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-5 text-xs text-zinc-600 pb-1 border-b border-white/5">
+                      <span>Date</span><span>Type</span><span className="text-right">Amount</span><span className="text-right">Rate</span><span className="text-right">Gain</span>
+                    </div>
+                    {position.events.map((ev, i) => (
+                      <div key={i} className="grid grid-cols-5 text-xs py-1 border-b border-white/[0.03] hover:bg-white/[0.02] rounded">
+                        <span className="text-zinc-500">{ev.date}</span>
+                        <span className={ev.type === 'buy' ? 'text-emerald-400' : 'text-amber-400'}>
+                          {ev.type === 'buy' ? '↓ Buy' : '↑ Sell'}
+                        </span>
+                        <span className="text-right text-white">{fmt(ev.amount, 3)}</span>
+                        <span className="text-right text-zinc-400">{fmt(ev.rate_at_event, 5)}</span>
+                        <span className={`text-right ${ev.type === 'sell' ? (ev.realized_gain_eth >= 0 ? 'text-emerald-400' : 'text-red-400') : 'text-zinc-600'}`}>
+                          {ev.type === 'sell' ? `${ev.realized_gain_eth >= 0 ? '+' : ''}${fmt(ev.realized_gain_eth, 4)}` : '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         )}
 
         {/* Chart */}

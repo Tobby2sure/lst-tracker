@@ -10,40 +10,65 @@ import {
   type SupportedToken,
 } from '@/lib/contracts';
 
-const client = createPublicClient({
-  chain: mainnet,
-  transport: http(process.env.ETHEREUM_RPC_URL || 'https://eth.llamarpc.com'),
-});
+// Multiple public RPC fallbacks — tries each in order until one succeeds
+const RPC_URLS = [
+  process.env.ETHEREUM_RPC_URL,
+  'https://ethereum.publicnode.com',
+  'https://rpc.ankr.com/eth',
+  'https://cloudflare-eth.com',
+  'https://eth.llamarpc.com',
+].filter(Boolean) as string[];
+
+async function tryReadContract<T>(
+  fn: (c: ReturnType<typeof createPublicClient>) => Promise<T>
+): Promise<T> {
+  let lastErr: unknown;
+  for (const url of RPC_URLS) {
+    try {
+      const c = createPublicClient({ chain: mainnet, transport: http(url, { timeout: 8000 }) });
+      return await fn(c);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
 
 async function getETHxRate(): Promise<number> {
-  const result = await client.readContract({
-    address: CONTRACTS.ETHx.staderOracle,
-    abi: STADER_ORACLE_ABI,
-    functionName: 'getExchangeRate',
+  return tryReadContract(async (c) => {
+    const result = await c.readContract({
+      address: CONTRACTS.ETHx.staderOracle,
+      abi: STADER_ORACLE_ABI,
+      functionName: 'getExchangeRate',
+    });
+    const totalETHBalance = result[1];
+    const totalETHXSupply = result[2];
+    if (totalETHXSupply === 0n) return 1;
+    return Number(formatEther(totalETHBalance)) / Number(formatEther(totalETHXSupply));
   });
-  const totalETHBalance = result[1];
-  const totalETHXSupply = result[2];
-  if (totalETHXSupply === 0n) return 1;
-  return Number(formatEther(totalETHBalance)) / Number(formatEther(totalETHXSupply));
 }
 
 async function getRsETHRate(): Promise<number> {
-  const price = await client.readContract({
-    address: LRTORACLE_ADDRESS,
-    abi: LRTORACLE_ABI,
-    functionName: 'rsETHPrice',
+  return tryReadContract(async (c) => {
+    const price = await c.readContract({
+      address: LRTORACLE_ADDRESS,
+      abi: LRTORACLE_ABI,
+      functionName: 'rsETHPrice',
+    });
+    return Number(formatEther(price));
   });
-  return Number(formatEther(price));
 }
 
 async function getBalance(tokenAddress: `0x${string}`, wallet: `0x${string}`): Promise<number> {
-  const raw = await client.readContract({
-    address: tokenAddress,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
-    args: [wallet],
+  return tryReadContract(async (c) => {
+    const raw = await c.readContract({
+      address: tokenAddress,
+      abi: ERC20_ABI,
+      functionName: 'balanceOf',
+      args: [wallet],
+    });
+    return Number(formatEther(raw));
   });
-  return Number(formatEther(raw));
 }
 
 export async function GET(req: NextRequest) {
@@ -70,7 +95,7 @@ export async function GET(req: NextRequest) {
     const balance = await getBalance(tokenAddress, wallet);
     const ethValue = balance * rate;
 
-    // Fetch ETH/USD price from CoinGecko (free tier)
+    // ETH/USD price from CoinGecko (free tier, cached 60s)
     let ethUsd = 0;
     try {
       const priceRes = await fetch(
@@ -93,6 +118,9 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error('Rate fetch error:', err);
-    return NextResponse.json({ error: 'Failed to fetch on-chain data' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Failed to fetch on-chain data. All public RPCs unavailable — try again in a moment.' },
+      { status: 500 }
+    );
   }
 }

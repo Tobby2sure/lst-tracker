@@ -33,6 +33,9 @@ export default function EarningsDashboard() {
   const [entryRate, setEntryRate] = useState('');
   const [loading, setLoading] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
+  const [entryLoading, setEntryLoading] = useState(false);
+  const [entryDetected, setEntryDetected] = useState(false);
+  const [transfers, setTransfers] = useState<{hash: string; date: string | null; amount: number; rate_at_block: number; eth_value_at_entry: number}[]>([]);
   const [data, setData] = useState<RateData | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [histDays, setHistDays] = useState(90);
@@ -59,6 +62,20 @@ export default function EarningsDashboard() {
       if (rateJson.error) throw new Error(rateJson.error);
       setData(rateJson);
       setHistory(histJson.data || []);
+
+      // Auto-detect entry rate from tx history
+      setEntryLoading(true);
+      setEntryDetected(false);
+      try {
+        const entryRes = await fetch(`/api/entry?wallet=${wallet}&token=${token}`);
+        const entryJson = await entryRes.json();
+        if (entryJson.weighted_entry_rate && !entryJson.error) {
+          setEntryRate(entryJson.weighted_entry_rate.toFixed(6));
+          setTransfers(entryJson.transfers || []);
+          setEntryDetected(true);
+        }
+      } catch {}
+      setEntryLoading(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load data');
     } finally {
@@ -158,20 +175,37 @@ export default function EarningsDashboard() {
             <div className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/5">
               <Info className="w-4 h-4 text-zinc-500 mt-0.5 flex-shrink-0" />
               <div className="flex-1 space-y-2">
-                <p className="text-xs text-zinc-400">
-                  <strong className="text-white">Optional:</strong> Enter the {token} → ETH exchange rate when you staked to calculate exact earnings.
-                  Find it on{' '}
-                  <a href="https://dune.com" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline inline-flex items-center gap-0.5">
-                    Dune <ExternalLink className="w-3 h-3" />
-                  </a>
-                  {' '}or leave blank to see current rate only.
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-zinc-400">
+                    <strong className="text-white">Entry rate</strong> — rate when you staked.{' '}
+                    {entryDetected
+                      ? <span className="text-emerald-400">Auto-detected from your tx history ✓</span>
+                      : <span>We&apos;ll auto-detect this from your wallet history.</span>
+                    }
+                  </p>
+                  {entryLoading && <Loader2 className="w-3 h-3 animate-spin text-zinc-500 flex-shrink-0" />}
+                </div>
                 <Input
                   value={entryRate}
-                  onChange={e => setEntryRate(e.target.value)}
-                  placeholder={`Your entry rate (e.g. 1.0423 for ETHx)`}
+                  onChange={e => { setEntryRate(e.target.value); setEntryDetected(false); }}
+                  placeholder={data ? `Detecting...` : `Rate auto-detected on lookup`}
                   className="bg-white/5 border-white/10 text-white placeholder:text-zinc-600 text-sm h-8"
                 />
+                {transfers.length > 0 && (
+                  <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                    <p className="text-xs text-zinc-500 mb-1">{transfers.length} transfer(s) detected:</p>
+                    {transfers.map(tx => (
+                      <div key={tx.hash} className="flex items-center justify-between text-xs text-zinc-500 hover:text-zinc-300">
+                        <span>{tx.date || '—'}</span>
+                        <span>+{tx.amount.toFixed(4)} {token}</span>
+                        <span className="text-zinc-600">@ {tx.rate_at_block.toFixed(5)}</span>
+                        <a href={`https://etherscan.io/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="text-sky-500 hover:text-sky-400">
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

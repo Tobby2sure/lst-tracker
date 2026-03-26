@@ -10,7 +10,31 @@ export const CONTRACTS = {
     token: '0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7' as `0x${string}`, // rsETH on Ethereum (KelpDAO)
     lrtDepositPool: '0x036676389e48133B63a802f8635AD39E752D375D' as `0x${string}`,
   },
+  agETH: {
+    token: '0xe1B4d34E8754600962Cd944B535180Bd758E6c2e' as `0x${string}`,
+  },
+  hgETH: {
+    token: '0xc824A08dB624942c5E5F330d56530cD1598859fD' as `0x${string}`,
+  },
 } as const;
+
+// ERC4626 vault ABI — rate = totalAssets() / totalSupply()
+export const ERC4626_ABI = [
+  {
+    name: 'totalAssets',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'totalSupply',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
 
 // ETHx StaderOracle ABI — exchangeRate returns (uint256 reportingBlockNumber, uint256 totalETHBalance, uint256 totalETHXSupply)
 export const STADER_ORACLE_ABI = [
@@ -50,9 +74,11 @@ export const ERC20_ABI = [
   },
 ] as const;
 
-export type SupportedToken = 'ETHx' | 'rsETH';
+export type SupportedToken = 'ETHx' | 'rsETH' | 'agETH' | 'hgETH';
 
 export const TOKEN_META: Record<SupportedToken, { name: string; color: string; protocol: string }> = {
   ETHx: { name: 'ETHx', color: '#0ea5e9', protocol: 'Stader Labs' },
   rsETH: { name: 'rsETH', color: '#8b5cf6', protocol: 'KelpDAO' },
+  agETH: { name: 'agETH', color: '#10b981', protocol: 'Kelp Gain' },
+  hgETH: { name: 'hgETH', color: '#f59e0b', protocol: 'Harvest Global' },
 };

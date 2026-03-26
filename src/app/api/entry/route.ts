@@ -16,12 +16,16 @@ interface AlchemyTransfer {
 // rsETH launched ~Jan 2024 at ~1.0; grows ~3.8% APY
 function approximateRateAtDate(token: SupportedToken, dateStr: string): number {
   const launchDates: Record<SupportedToken, string> = {
-    ETHx: '2023-05-10',
+    ETHx:  '2023-05-10',
     rsETH: '2024-01-18',
+    agETH: '2024-04-01',
+    hgETH: '2024-06-01',
   };
   const aprRates: Record<SupportedToken, number> = {
-    ETHx: 0.045,
+    ETHx:  0.045,
     rsETH: 0.038,
+    agETH: 0.040,
+    hgETH: 0.042,
   };
   const launch = new Date(launchDates[token]).getTime();
   const target = new Date(dateStr).getTime();
@@ -44,9 +48,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'ALCHEMY_API_KEY not configured' }, { status: 500 });
   }
 
-  const tokenAddress = token === 'ETHx'
-    ? '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b'
-    : '0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7';
+  const tokenAddresses: Record<string, string> = {
+    ETHx:  '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b',
+    rsETH: '0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7',
+    agETH: '0xe1B4d34E8754600962Cd944B535180Bd758E6c2e',
+    hgETH: '0xc824A08dB624942c5E5F330d56530cD1598859fD',
+  };
+  const tokenAddress = tokenAddresses[token] || tokenAddresses['ETHx'];
 
   try {
     const alchemyUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`;

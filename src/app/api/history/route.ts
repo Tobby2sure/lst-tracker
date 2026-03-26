@@ -44,9 +44,10 @@ export async function GET(req: NextRequest) {
 }
 
 function generateMockHistory(days: number, token: string): { date: string; rate: number }[] {
-  // Simulate realistic exchange rate growth (~4-5% APR)
-  const startRate = token === 'ETHx' ? 1.042 : 1.028;
-  const dailyGrowth = (token === 'ETHx' ? 0.045 : 0.038) / 365;
+  const startRates: Record<string, number> = { ETHx: 1.042, rsETH: 1.028, agETH: 1.008, hgETH: 1.010 };
+  const aprs: Record<string, number>       = { ETHx: 0.045, rsETH: 0.038, agETH: 0.040, hgETH: 0.042 };
+  const startRate = startRates[token] ?? 1.01;
+  const dailyGrowth = (aprs[token] ?? 0.040) / 365;
   const result = [];
   const now = Date.now();
 

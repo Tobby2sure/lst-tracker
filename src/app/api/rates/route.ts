@@ -7,6 +7,7 @@ import {
   LRTORACLE_ADDRESS,
   LRTORACLE_ABI,
   ERC20_ABI,
+  ERC4626_ABI,
   type SupportedToken,
 } from '@/lib/contracts';
 
@@ -56,6 +57,17 @@ async function getRsETHRate(): Promise<number> {
   });
 }
 
+async function getERC4626Rate(tokenAddress: `0x${string}`): Promise<number> {
+  return tryReadContract(async (c) => {
+    const [assets, supply] = await Promise.all([
+      c.readContract({ address: tokenAddress, abi: ERC4626_ABI, functionName: 'totalAssets' }),
+      c.readContract({ address: tokenAddress, abi: ERC4626_ABI, functionName: 'totalSupply' }),
+    ]);
+    if (supply === 0n) return 1;
+    return Number(formatEther(assets)) / Number(formatEther(supply));
+  });
+}
+
 async function getBalance(tokenAddress: `0x${string}`, wallet: `0x${string}`): Promise<number> {
   return tryReadContract(async (c) => {
     const raw = await c.readContract({
@@ -84,9 +96,15 @@ export async function GET(req: NextRequest) {
     if (token === 'ETHx') {
       rate = await getETHxRate();
       tokenAddress = CONTRACTS.ETHx.token;
-    } else {
+    } else if (token === 'rsETH') {
       rate = await getRsETHRate();
       tokenAddress = CONTRACTS.rsETH.token;
+    } else if (token === 'agETH') {
+      tokenAddress = CONTRACTS.agETH.token;
+      rate = await getERC4626Rate(tokenAddress);
+    } else {
+      tokenAddress = CONTRACTS.hgETH.token;
+      rate = await getERC4626Rate(tokenAddress);
     }
 
     const balance = await getBalance(tokenAddress, wallet);

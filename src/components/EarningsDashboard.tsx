@@ -63,19 +63,27 @@ export default function EarningsDashboard() {
       setData(rateJson);
       setHistory(histJson.data || []);
 
-      // Auto-detect entry rate from tx history
+      // Auto-detect entry rate from tx history (with 12s timeout)
       setEntryLoading(true);
       setEntryDetected(false);
       try {
-        const entryRes = await fetch(`/api/entry?wallet=${wallet}&token=${token}`);
+        const entryController = new AbortController();
+        const entryTimeout = setTimeout(() => entryController.abort(), 12000);
+        const entryRes = await fetch(`/api/entry?wallet=${wallet}&token=${token}`, {
+          signal: entryController.signal,
+        });
+        clearTimeout(entryTimeout);
         const entryJson = await entryRes.json();
         if (entryJson.weighted_entry_rate && !entryJson.error) {
           setEntryRate(entryJson.weighted_entry_rate.toFixed(6));
           setTransfers(entryJson.transfers || []);
           setEntryDetected(true);
         }
-      } catch {}
-      setEntryLoading(false);
+      } catch {
+        // Timed out or failed — user can enter manually
+      } finally {
+        setEntryLoading(false);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load data');
     } finally {

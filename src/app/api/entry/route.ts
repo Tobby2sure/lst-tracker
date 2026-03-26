@@ -1,49 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPublicClient, http, formatEther } from 'viem';
-import { mainnet } from 'viem/chains';
-import { CONTRACTS, STADER_ORACLE_ABI, LRTORACLE_ADDRESS, LRTORACLE_ABI, type SupportedToken } from '@/lib/contracts';
+import { type SupportedToken } from '@/lib/contracts';
 
-const client = createPublicClient({
-  chain: mainnet,
-  transport: http(process.env.ETHEREUM_RPC_URL || 'https://eth.llamarpc.com'),
-});
-
-interface Transfer {
+interface AlchemyTransfer {
   blockNum: string;
   hash: string;
   from: string;
   to: string;
   value: number;
   asset: string;
-  category: string;
-  rawContract?: { value: string; address: string; decimal: string };
+  metadata?: { blockTimestamp?: string };
 }
 
-// Fetch exchange rate at a specific block number
-async function getRateAtBlock(token: SupportedToken, blockNumber: bigint): Promise<number> {
+// Get exchange rate at a specific date from the history mock/Dune data
+// Instead of slow per-block RPC calls, we interpolate from daily rate history
+async function getRateAtDate(token: SupportedToken, dateStr: string, baseUrl: string): Promise<number | null> {
   try {
-    if (token === 'ETHx') {
-      const result = await client.readContract({
-        address: CONTRACTS.ETHx.staderOracle,
-        abi: STADER_ORACLE_ABI,
-        functionName: 'exchangeRate',
-        blockNumber,
-      });
-      const eth = result[1];
-      const supply = result[2];
-      if (supply === 0n) return 1;
-      return Number(formatEther(eth)) / Number(formatEther(supply));
-    } else {
-      const price = await client.readContract({
-        address: LRTORACLE_ADDRESS,
-        abi: LRTORACLE_ABI,
-        functionName: 'rsETHPrice',
-        blockNumber,
-      });
-      return Number(formatEther(price));
+    const res = await fetch(`${baseUrl}/api/history?token=${token}&days=365`, {
+      next: { revalidate: 3600 },
+    });
+    const json = await res.json();
+    const history: { date: string; rate: number }[] = json?.data || [];
+    if (!history.length) return null;
+
+    // Find closest date in history
+    const target = new Date(dateStr).getTime();
+    let closest = history[0];
+    let minDiff = Infinity;
+    for (const point of history) {
+      const diff = Math.abs(new Date(point.date).getTime() - target);
+      if (diff < minDiff) { minDiff = diff; closest = point; }
     }
+    return closest.rate;
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -62,19 +51,18 @@ export async function GET(req: NextRequest) {
   }
 
   const tokenAddress = token === 'ETHx'
-    ? CONTRACTS.ETHx.token.toLowerCase()
-    : CONTRACTS.rsETH.token.toLowerCase();
+    ? '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b'
+    : '0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7';
 
   try {
-    // Fetch all inbound token transfers to this wallet
     const alchemyUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`;
 
+    // Get inbound transfers with timestamps
     const res = await fetch(alchemyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
+        jsonrpc: '2.0', id: 1,
         method: 'alchemy_getAssetTransfers',
         params: [{
           toAddress: wallet,
@@ -82,57 +70,44 @@ export async function GET(req: NextRequest) {
           category: ['erc20'],
           withMetadata: true,
           excludeZeroValue: true,
-          maxCount: '0x32', // 50 transfers
+          maxCount: '0x14', // 20 transfers
           order: 'asc',
         }],
       }),
     });
 
     const json = await res.json();
-    const transfers: Transfer[] = json?.result?.transfers || [];
+    const transfers: AlchemyTransfer[] = json?.result?.transfers || [];
 
     if (transfers.length === 0) {
-      return NextResponse.json({ transfers: [], weighted_entry_rate: null, earliest_transfer: null });
+      return NextResponse.json({ transfers: [], weighted_entry_rate: null });
     }
 
-    // For each transfer, get the exchange rate at that block
+    // Base URL for calling our own history API
+    const baseUrl = req.nextUrl.origin;
+
+    // Get rate for each transfer using date-based lookup (fast — no per-block RPC)
     const enriched = await Promise.all(
       transfers.map(async (tx) => {
-        const blockNum = BigInt(tx.blockNum);
-        const rate = await getRateAtBlock(token, blockNum);
-        const blockHex = tx.blockNum;
-        // Get block timestamp via eth_getBlockByNumber
-        let timestamp: number | null = null;
-        try {
-          const blockRes = await fetch(alchemyUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              jsonrpc: '2.0', id: 2,
-              method: 'eth_getBlockByNumber',
-              params: [blockHex, false],
-            }),
-          });
-          const blockJson = await blockRes.json();
-          timestamp = parseInt(blockJson?.result?.timestamp, 16) * 1000;
-        } catch {}
+        const ts = tx.metadata?.blockTimestamp;
+        const date = ts ? ts.split('T')[0] : null;
+        const rate = date ? await getRateAtDate(token, date, baseUrl) : null;
 
         return {
           hash: tx.hash,
-          block: Number(blockNum),
-          timestamp,
-          date: timestamp ? new Date(timestamp).toISOString().split('T')[0] : null,
+          date,
           amount: tx.value || 0,
-          rate_at_block: rate,
-          eth_value_at_entry: (tx.value || 0) * rate,
+          rate_at_block: rate || 0,
+          eth_value_at_entry: (tx.value || 0) * (rate || 0),
         };
       })
     );
 
-    // Weighted average entry rate by amount received
-    const totalTokens = enriched.reduce((s, t) => s + t.amount, 0);
+    // Filter to transfers where we got a rate
+    const valid = enriched.filter(t => t.rate_at_block > 0);
+    const totalTokens = valid.reduce((s, t) => s + t.amount, 0);
     const weightedRate = totalTokens > 0
-      ? enriched.reduce((s, t) => s + t.rate_at_block * t.amount, 0) / totalTokens
+      ? valid.reduce((s, t) => s + t.rate_at_block * t.amount, 0) / totalTokens
       : null;
 
     return NextResponse.json({

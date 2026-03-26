@@ -22,16 +22,13 @@ const RPC_URLS = [
 async function tryReadContract<T>(
   fn: (c: ReturnType<typeof createPublicClient>) => Promise<T>
 ): Promise<T> {
-  let lastErr: unknown;
-  for (const url of RPC_URLS) {
-    try {
-      const c = createPublicClient({ chain: mainnet, transport: http(url, { timeout: 8000 }) });
-      return await fn(c);
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
+  // Race all RPCs in parallel — fastest one wins, avoids sequential timeout
+  return Promise.any(
+    RPC_URLS.map(url => {
+      const c = createPublicClient({ chain: mainnet, transport: http(url, { timeout: 6000 }) });
+      return fn(c);
+    })
+  );
 }
 
 async function getETHxRate(): Promise<number> {

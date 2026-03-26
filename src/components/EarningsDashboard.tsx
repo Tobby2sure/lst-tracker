@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,20 @@ export default function EarningsDashboard() {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [histDays, setHistDays] = useState(90);
   const [error, setError] = useState('');
+
+  // Reset and refetch when token changes (if wallet already loaded)
+  useEffect(() => {
+    if (data) {
+      setData(null);
+      setPosition(null);
+      setHistory([]);
+      setEntryRate('');
+      setEntryDetected(false);
+      setTransfers([]);
+      fetchData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const fetchData = useCallback(async () => {
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {

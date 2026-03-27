@@ -1,5 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { type SupportedToken } from '@/lib/contracts';
+import { CONTRACTS, L2_RSETH_ADDRESS, CHAIN_META, type SupportedToken, type SupportedChain } from '@/lib/contracts';
+
+function getAlchemyUrl(chain: SupportedChain, apiKey: string): string {
+  const networkMap: Record<SupportedChain, string> = {
+    ethereum: 'eth-mainnet',
+    arbitrum: 'arb-mainnet',
+    base:     'base-mainnet',
+    optimism: 'opt-mainnet',
+  };
+  return `https://${networkMap[chain]}.g.alchemy.com/v2/${apiKey}`;
+}
+
+function getTokenAddress(token: SupportedToken, chain: SupportedChain): string {
+  if (token === 'rsETH' && chain !== 'ethereum') {
+    return L2_RSETH_ADDRESS[chain] || CONTRACTS.rsETH.token;
+  }
+  return ({
+    ETHx:  CONTRACTS.ETHx.token,
+    rsETH: CONTRACTS.rsETH.token,
+    agETH: CONTRACTS.agETH.token,
+    hgETH: CONTRACTS.hgETH.token,
+  } as Record<SupportedToken, string>)[token];
+}
 
 interface AlchemyTransfer {
   blockNum: string;
@@ -60,6 +82,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const wallet = searchParams.get('wallet') as `0x${string}` | null;
   const token = (searchParams.get('token') || 'ETHx') as SupportedToken;
+  const chain = (searchParams.get('chain') || 'ethereum') as SupportedChain;
   const currentRate = parseFloat(searchParams.get('rate') || '0');
 
   if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
@@ -71,14 +94,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'ALCHEMY_API_KEY not configured' }, { status: 500 });
   }
 
-  const tokenAddresses: Record<string, string> = {
-    ETHx:  '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b',
-    rsETH: '0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7',
-    agETH: '0xe1B4d34E8754600962Cd944B535180Bd758E6c2e',
-    hgETH: '0xc824A08dB624942c5E5F330d56530cD1598859fD',
-  };
-  const tokenAddress = tokenAddresses[token];
-  const alchemyUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`;
+  const tokenAddress = getTokenAddress(token, chain);
+  const alchemyUrl = getAlchemyUrl(chain, alchemyKey);
 
   try {
     // Fetch both inbound (buys) AND outbound (sells) transfers

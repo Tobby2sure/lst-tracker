@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { type SupportedToken } from '@/lib/contracts';
+import { CONTRACTS, L2_RSETH_ADDRESS, CHAIN_META, type SupportedToken, type SupportedChain } from '@/lib/contracts';
 
 interface AlchemyTransfer {
   blockNum: string;
@@ -12,8 +12,6 @@ interface AlchemyTransfer {
 }
 
 // Approximate exchange rate at a given date using known APR growth model
-// ETHx launched ~May 2023 at ~1.0; grows ~4.5% APY
-// rsETH launched ~Jan 2024 at ~1.0; grows ~3.8% APY
 function approximateRateAtDate(token: SupportedToken, dateStr: string): number {
   const launchDates: Record<SupportedToken, string> = {
     ETHx:  '2023-05-10',
@@ -34,10 +32,36 @@ function approximateRateAtDate(token: SupportedToken, dateStr: string): number {
   return 1.0 * Math.pow(1 + dailyRate, daysSinceLaunch);
 }
 
+// Get Alchemy endpoint for a given chain
+function getAlchemyUrl(chain: SupportedChain, apiKey: string): string {
+  const networkMap: Record<SupportedChain, string> = {
+    ethereum: 'eth-mainnet',
+    arbitrum: 'arb-mainnet',
+    base:     'base-mainnet',
+    optimism: 'opt-mainnet',
+  };
+  return `https://${networkMap[chain]}.g.alchemy.com/v2/${apiKey}`;
+}
+
+// Get token address for the given chain
+function getTokenAddress(token: SupportedToken, chain: SupportedChain): string {
+  if (token === 'rsETH' && chain !== 'ethereum') {
+    return L2_RSETH_ADDRESS[chain] || CONTRACTS.rsETH.token;
+  }
+  const mainnetAddresses: Record<SupportedToken, string> = {
+    ETHx:  CONTRACTS.ETHx.token,
+    rsETH: CONTRACTS.rsETH.token,
+    agETH: CONTRACTS.agETH.token,
+    hgETH: CONTRACTS.hgETH.token,
+  };
+  return mainnetAddresses[token];
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const wallet = searchParams.get('wallet') as `0x${string}` | null;
   const token = (searchParams.get('token') || 'ETHx') as SupportedToken;
+  const chain = (searchParams.get('chain') || 'ethereum') as SupportedChain;
 
   if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
     return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 });
@@ -48,18 +72,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'ALCHEMY_API_KEY not configured' }, { status: 500 });
   }
 
-  const tokenAddresses: Record<string, string> = {
-    ETHx:  '0xA35b1B31Ce002FBF2058D22F30f95D405200A15b',
-    rsETH: '0xA1290d69c65A6Fe4DF752f95823fae25cB99e5A7',
-    agETH: '0xe1B4d34E8754600962Cd944B535180Bd758E6c2e',
-    hgETH: '0xc824A08dB624942c5E5F330d56530cD1598859fD',
-  };
-  const tokenAddress = tokenAddresses[token] || tokenAddresses['ETHx'];
+  const tokenAddress = getTokenAddress(token, chain);
+  const alchemyUrl = getAlchemyUrl(chain, alchemyKey);
 
   try {
-    const alchemyUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyKey}`;
-
-    // Get inbound transfers with timestamps
     const res = await fetch(alchemyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -72,7 +88,7 @@ export async function GET(req: NextRequest) {
           category: ['erc20'],
           withMetadata: true,
           excludeZeroValue: true,
-          maxCount: '0x14', // 20 transfers
+          maxCount: '0x14',
           order: 'asc',
         }],
       }),
@@ -82,27 +98,22 @@ export async function GET(req: NextRequest) {
     const transfers: AlchemyTransfer[] = json?.result?.transfers || [];
 
     if (transfers.length === 0) {
-      return NextResponse.json({ transfers: [], weighted_entry_rate: null });
+      return NextResponse.json({ transfers: [], weighted_entry_rate: null, chain });
     }
 
-    // Get rate for each transfer using date-based approximation (fast — no RPC calls)
-    const enriched = await Promise.all(
-      transfers.map(async (tx) => {
-        const ts = tx.metadata?.blockTimestamp;
-        const date = ts ? ts.split('T')[0] : null;
-        const rate = date ? approximateRateAtDate(token, date) : null;
+    const enriched = transfers.map((tx) => {
+      const ts = tx.metadata?.blockTimestamp;
+      const date = ts ? ts.split('T')[0] : null;
+      const rate = date ? approximateRateAtDate(token, date) : null;
+      return {
+        hash: tx.hash,
+        date,
+        amount: tx.value || 0,
+        rate_at_block: rate || 0,
+        eth_value_at_entry: (tx.value || 0) * (rate || 0),
+      };
+    });
 
-        return {
-          hash: tx.hash,
-          date,
-          amount: tx.value || 0,
-          rate_at_block: rate || 0,
-          eth_value_at_entry: (tx.value || 0) * (rate || 0),
-        };
-      })
-    );
-
-    // Filter to transfers where we got a rate
     const valid = enriched.filter(t => t.rate_at_block > 0);
     const totalTokens = valid.reduce((s, t) => s + t.amount, 0);
     const weightedRate = totalTokens > 0
@@ -114,6 +125,7 @@ export async function GET(req: NextRequest) {
       weighted_entry_rate: weightedRate,
       total_tokens_received: totalTokens,
       earliest_transfer: enriched[0] || null,
+      chain,
     });
 
   } catch (err) {

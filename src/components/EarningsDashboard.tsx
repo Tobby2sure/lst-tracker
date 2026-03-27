@@ -10,9 +10,10 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, ReferenceLine, CartesianGrid,
 } from 'recharts';
-import { Search, TrendingUp, Coins, DollarSign, Loader2, Info, ExternalLink } from 'lucide-react';
+import { Search, TrendingUp, Coins, DollarSign, Loader2, Info, ExternalLink, CalendarRange, ArrowRight } from 'lucide-react';
 import { TOKEN_META, type SupportedToken } from '@/lib/contracts';
 import type { PositionSummary } from '@/app/api/positions/route';
+import type { RangeResult } from '@/app/api/range/route';
 
 interface RateData {
   token: string;
@@ -39,10 +40,28 @@ export default function EarningsDashboard() {
   const [transfers, setTransfers] = useState<{hash: string; date: string | null; amount: number; rate_at_block: number; eth_value_at_entry: number}[]>([]);
   const [position, setPosition] = useState<PositionSummary | null>(null);
   const [posLoading, setPosLoading] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState('');
+  const [rangeTo, setRangeTo] = useState(new Date().toISOString().split('T')[0]);
+  const [rangeData, setRangeData] = useState<RangeResult | null>(null);
+  const [rangeLoading, setRangeLoading] = useState(false);
   const [data, setData] = useState<RateData | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [histDays, setHistDays] = useState(90);
   const [error, setError] = useState('');
+
+  const fetchRange = async () => {
+    if (!wallet || !data) return;
+    setRangeLoading(true);
+    setRangeData(null);
+    try {
+      const res = await fetch(
+        `/api/range?wallet=${wallet}&token=${token}&from=${rangeFrom}&to=${rangeTo}&rate=${data.rate}`
+      );
+      const json = await res.json();
+      if (!json.error) setRangeData(json);
+    } catch {}
+    setRangeLoading(false);
+  };
 
   // Reset and refetch when token changes (if wallet already loaded)
   useEffect(() => {
@@ -351,6 +370,117 @@ export default function EarningsDashboard() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Date Range Analyzer */}
+        {data && (
+          <Card className="bg-white/[0.03] border-white/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm text-white flex items-center gap-2">
+                <CalendarRange className="w-4 h-4 text-purple-400" />
+                Period & Lot Analysis
+              </CardTitle>
+              <CardDescription className="text-xs text-zinc-500">
+                Calculate earnings for a specific date range, with FIFO lot matching
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Date inputs */}
+              <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                <div className="flex items-center gap-2 flex-1 w-full">
+                  <span className="text-xs text-zinc-500 w-8 flex-shrink-0">From</span>
+                  <input
+                    type="date"
+                    value={rangeFrom}
+                    onChange={e => setRangeFrom(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500 min-w-0"
+                  />
+                </div>
+                <ArrowRight className="w-3.5 h-3.5 text-zinc-600 hidden sm:block flex-shrink-0" />
+                <div className="flex items-center gap-2 flex-1 w-full">
+                  <span className="text-xs text-zinc-500 w-8 flex-shrink-0">To</span>
+                  <input
+                    type="date"
+                    value={rangeTo}
+                    onChange={e => setRangeTo(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-sm text-white focus:outline-none focus:border-purple-500 min-w-0"
+                  />
+                </div>
+                <Button
+                  onClick={fetchRange}
+                  disabled={rangeLoading}
+                  size="sm"
+                  className="bg-purple-600 hover:bg-purple-500 text-white w-full sm:w-auto flex-shrink-0"
+                >
+                  {rangeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Analyze'}
+                </Button>
+              </div>
+
+              {/* Range summary */}
+              {rangeData && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { label: 'Start Value', value: `${fmt(rangeData.value_at_start_eth, 4)} ETH`, sub: `@ ${fmt(rangeData.rate_at_start, 5)}` },
+                      { label: 'End Value', value: `${fmt(rangeData.value_at_end_eth, 4)} ETH`, sub: `@ ${fmt(rangeData.rate_at_end, 5)}` },
+                      { label: 'Realized', value: `${rangeData.realized_in_period_eth >= 0 ? '+' : ''}${fmt(rangeData.realized_in_period_eth, 4)} ETH`, sub: 'From exits in period', highlight: rangeData.realized_in_period_eth > 0 },
+                      { label: 'Unrealized', value: `${rangeData.unrealized_gain_eth >= 0 ? '+' : ''}${fmt(rangeData.unrealized_gain_eth, 4)} ETH`, sub: 'On open lots', highlight: rangeData.unrealized_gain_eth > 0 },
+                    ].map(item => (
+                      <div key={item.label} className={`p-2.5 rounded-lg border ${item.highlight ? 'bg-emerald-500/5 border-emerald-500/10' : 'bg-white/[0.02] border-white/5'}`}>
+                        <p className="text-xs text-zinc-500 mb-1">{item.label}</p>
+                        <p className={`text-sm font-semibold ${item.highlight ? 'text-emerald-400' : 'text-white'}`}>{item.value}</p>
+                        <p className="text-xs text-zinc-600 mt-0.5">{item.sub}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Lot table */}
+                  {rangeData.lots.length > 0 && (
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-2 font-medium uppercase tracking-wider">Lots — FIFO Matching</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs min-w-[480px]">
+                          <thead>
+                            <tr className="text-zinc-600 border-b border-white/5">
+                              <th className="text-left pb-1.5 font-medium">Buy Date</th>
+                              <th className="text-left pb-1.5 font-medium">Sell Date</th>
+                              <th className="text-right pb-1.5 font-medium">Amount</th>
+                              <th className="text-right pb-1.5 font-medium">Buy Rate</th>
+                              <th className="text-right pb-1.5 font-medium">Sell Rate</th>
+                              <th className="text-right pb-1.5 font-medium">Gain (ETH)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rangeData.lots.map((lot, i) => (
+                              <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                                <td className="py-1.5 text-zinc-400">{lot.buy_date}</td>
+                                <td className="py-1.5">
+                                  {lot.sell_date
+                                    ? <span className="text-zinc-400">{lot.sell_date}</span>
+                                    : <span className="text-amber-400/70 italic">Open</span>}
+                                </td>
+                                <td className="py-1.5 text-right text-white">{fmt(lot.amount, 3)}</td>
+                                <td className="py-1.5 text-right text-zinc-400">{fmt(lot.buy_rate, 5)}</td>
+                                <td className="py-1.5 text-right text-zinc-400">
+                                  {lot.sell_rate ? fmt(lot.sell_rate, 5) : <span className="text-amber-400/70">—</span>}
+                                </td>
+                                <td className={`py-1.5 text-right font-medium ${lot.gain_eth === null ? 'text-amber-400/70' : lot.gain_eth >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {lot.gain_eth === null
+                                    ? `~${fmt((lot.amount * (rangeData.rate_at_end - lot.buy_rate)), 4)}`
+                                    : `${lot.gain_eth >= 0 ? '+' : ''}${fmt(lot.gain_eth, 4)}`}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-zinc-600 mt-2">Open lot gains are estimated at current rate (~)</p>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

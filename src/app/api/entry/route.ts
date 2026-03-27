@@ -39,6 +39,7 @@ function getAlchemyUrl(chain: SupportedChain, apiKey: string): string {
     arbitrum: 'arb-mainnet',
     base:     'base-mainnet',
     optimism: 'opt-mainnet',
+    mode:     'mode-mainnet',
   };
   return `https://${networkMap[chain]}.g.alchemy.com/v2/${apiKey}`;
 }

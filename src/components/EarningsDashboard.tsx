@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,7 +13,7 @@ import {
 import {
   Search, TrendingUp, Coins, DollarSign, Loader2,
   Info, ExternalLink, CalendarRange, ArrowRight,
-  Wallet, ChevronDown, BarChart3,
+  Wallet, ChevronDown, BarChart3, Copy, CheckCheck,
 } from 'lucide-react';
 import { TOKEN_META, CHAIN_META, CHAIN_TOKEN_SUPPORT, type SupportedToken, type SupportedChain } from '@/lib/contracts';
 import type { PositionSummary } from '@/app/api/positions/route';
@@ -50,8 +51,39 @@ export default function EarningsDashboard() {
   const [histDays, setHistDays] = useState(90);
   const [error, setError] = useState('');
   const [showTransfers, setShowTransfers] = useState(false);
+  const [copied, setCopied] = useState(false);
 
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const meta = TOKEN_META[token];
+
+  // Read initial state from URL on mount
+  useEffect(() => {
+    const w = searchParams.get('wallet');
+    const t = searchParams.get('token') as SupportedToken | null;
+    const c = searchParams.get('chain') as SupportedChain | null;
+    if (c && Object.keys(CHAIN_META).includes(c)) setChain(c);
+    if (t && (CHAIN_TOKEN_SUPPORT[c || 'ethereum'] as string[]).includes(t)) setToken(t);
+    if (w && /^0x[0-9a-fA-F]{40}$/.test(w)) setWallet(w);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync URL when wallet/token/chain change (only after first load)
+  const syncUrl = useCallback((w: string, t: SupportedToken, c: SupportedChain) => {
+    const params = new URLSearchParams();
+    if (w) params.set('wallet', w);
+    params.set('token', t);
+    params.set('chain', c);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [router]);
 
   const fetchRange = async () => {
     if (!wallet || !data) return;
@@ -89,6 +121,7 @@ export default function EarningsDashboard() {
       return;
     }
     setError(''); setLoading(true); setHistLoading(true);
+    syncUrl(wallet, token, chain);
     try {
       const [rateRes, histRes] = await Promise.all([
         fetch(`/api/rates?wallet=${wallet}&token=${token}&chain=${chain}`),
@@ -235,6 +268,13 @@ export default function EarningsDashboard() {
                 className="h-11 px-6 bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-white font-medium shadow-lg shadow-sky-500/20 border-0">
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Search className="w-4 h-4 mr-1.5" />Check</>}
               </Button>
+              {data && (
+                <Button onClick={handleCopyLink} variant="outline" size="icon"
+                  className="h-11 w-11 border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white flex-shrink-0"
+                  title="Copy shareable link">
+                  {copied ? <CheckCheck className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              )}
             </div>
 
             {error && (

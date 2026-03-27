@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPublicClient, http, formatEther } from 'viem';
 import { mainnet, arbitrum, base, optimism } from 'viem/chains';
+import { defineChain } from 'viem';
+
+const mode = defineChain({
+  id: 34443,
+  name: 'Mode',
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: { default: { http: ['https://mainnet.mode.network'] } },
+  blockExplorers: { default: { name: 'Blockscout', url: 'https://explorer.mode.network' } },
+});
 import {
   CONTRACTS, STADER_ORACLE_ABI, LRTORACLE_ADDRESS, LRTORACLE_ABI,
   ERC20_ABI, ERC4626_ABI,
@@ -34,6 +43,7 @@ const VIEM_CHAIN: Record<SupportedChain, typeof mainnet> = {
   arbitrum: arbitrum as unknown as typeof mainnet,
   base: base as unknown as typeof mainnet,
   optimism: optimism as unknown as typeof mainnet,
+  mode: mode as unknown as typeof mainnet,
 };
 
 async function tryCall<T>(

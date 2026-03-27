@@ -1,6 +1,6 @@
 // LST contract addresses and ABIs
 
-export type SupportedChain = 'ethereum' | 'arbitrum' | 'base' | 'optimism';
+export type SupportedChain = 'ethereum' | 'arbitrum' | 'base' | 'optimism' | 'mode';
 export type SupportedToken = 'ETHx' | 'rsETH' | 'agETH' | 'hgETH';
 
 // Which tokens are available on each chain
@@ -9,6 +9,7 @@ export const CHAIN_TOKEN_SUPPORT: Record<SupportedChain, SupportedToken[]> = {
   arbitrum: ['rsETH'],
   base:     ['rsETH'],
   optimism: ['rsETH'],
+  mode:     ['rsETH'],
 };
 
 // L2 rsETH OFT token addresses (bridged via LayerZero)
@@ -17,6 +18,7 @@ export const L2_RSETH_ADDRESS: Record<SupportedChain, `0x${string}` | null> = {
   arbitrum: '0x4186BFC76E2E237523CBC30FD220FE055156b41F',
   base:     '0x1Bc71130A0e39942a7658878169764Bbd8A45993',
   optimism: '0x87eEE96D50Fb761AD85B1c982d28A042169d61b1',
+  mode:     '0x4186BFC76E2E237523CBC30FD220FE055156b41F', // same OFT contract as Arb
 };
 
 // Chain metadata
@@ -64,6 +66,15 @@ export const CHAIN_META: Record<SupportedChain, {
     bridgeUrl: 'https://app.optimism.io/bridge',
     alchemyNetwork: 'opt-mainnet',
     publicRpcs: ['https://mainnet.optimism.io', 'https://rpc.ankr.com/optimism', 'https://optimism.publicnode.com'],
+  },
+  mode: {
+    name: 'Mode',
+    chainId: 34443,
+    color: '#DFFE00',
+    icon: '◎',
+    bridgeUrl: 'https://app.mode.network',
+    alchemyNetwork: 'mode-mainnet',
+    publicRpcs: ['https://mainnet.mode.network', 'https://mode.drpc.org', 'https://rpc.ankr.com/mode'],
   },
 };
 

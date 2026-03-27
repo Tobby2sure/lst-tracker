@@ -14,7 +14,7 @@ import {
   Info, ExternalLink, CalendarRange, ArrowRight,
   Wallet, ChevronDown, BarChart3,
 } from 'lucide-react';
-import { TOKEN_META, type SupportedToken } from '@/lib/contracts';
+import { TOKEN_META, CHAIN_META, CHAIN_TOKEN_SUPPORT, type SupportedToken, type SupportedChain } from '@/lib/contracts';
 import type { PositionSummary } from '@/app/api/positions/route';
 import type { RangeResult } from '@/app/api/range/route';
 
@@ -32,6 +32,7 @@ const fmtUsd = (n: number) =>
 export default function EarningsDashboard() {
   const [wallet, setWallet] = useState('');
   const [token, setToken] = useState<SupportedToken>('ETHx');
+  const [chain, setChain] = useState<SupportedChain>('ethereum');
   const [entryRate, setEntryRate] = useState('');
   const [loading, setLoading] = useState(false);
   const [histLoading, setHistLoading] = useState(false);
@@ -57,7 +58,7 @@ export default function EarningsDashboard() {
     setRangeLoading(true);
     setRangeData(null);
     try {
-      const res = await fetch(`/api/range?wallet=${wallet}&token=${token}&from=${rangeFrom}&to=${rangeTo}&rate=${data.rate}`);
+      const res = await fetch(`/api/range?wallet=${wallet}&token=${token}&chain=${chain}&from=${rangeFrom}&to=${rangeTo}&rate=${data.rate}`);
       const json = await res.json();
       if (!json.error) setRangeData(json);
     } catch {}
@@ -71,7 +72,16 @@ export default function EarningsDashboard() {
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, chain]);
+
+  // When chain changes, validate token is supported; reset if not
+  const handleChainChange = (newChain: SupportedChain) => {
+    setChain(newChain);
+    const supported = CHAIN_TOKEN_SUPPORT[newChain];
+    if (!supported.includes(token)) {
+      setToken(supported[0]);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
@@ -81,7 +91,7 @@ export default function EarningsDashboard() {
     setError(''); setLoading(true); setHistLoading(true);
     try {
       const [rateRes, histRes] = await Promise.all([
-        fetch(`/api/rates?wallet=${wallet}&token=${token}`),
+        fetch(`/api/rates?wallet=${wallet}&token=${token}&chain=${chain}`),
         fetch(`/api/history?token=${token}&days=${histDays}`),
       ]);
       const rateJson = await rateRes.json();
@@ -91,7 +101,7 @@ export default function EarningsDashboard() {
       setHistory(histJson.data || []);
 
       setPosLoading(true);
-      fetch(`/api/positions?wallet=${wallet}&token=${token}&rate=${rateJson.rate}`)
+      fetch(`/api/positions?wallet=${wallet}&token=${token}&chain=${chain}&rate=${rateJson.rate}`)
         .then(r => r.json())
         .then(p => { if (!p.error) setPosition(p); })
         .catch(() => {})
@@ -101,7 +111,7 @@ export default function EarningsDashboard() {
       try {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 12000);
-        const entryRes = await fetch(`/api/entry?wallet=${wallet}&token=${token}`, { signal: ctrl.signal });
+        const entryRes = await fetch(`/api/entry?wallet=${wallet}&token=${token}&chain=${chain}`, { signal: ctrl.signal });
         clearTimeout(t);
         const entryJson = await entryRes.json();
         if (entryJson.weighted_entry_rate && !entryJson.error) {
@@ -131,7 +141,7 @@ export default function EarningsDashboard() {
               <TrendingUp className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="font-semibold text-sm tracking-tight">LST Earnings</span>
-            <span className="hidden sm:block text-xs text-zinc-600 border border-white/[0.08] rounded-full px-2 py-0.5">Ethereum Mainnet</span>
+            <span className="hidden sm:block text-xs text-zinc-600 border border-white/[0.08] rounded-full px-2 py-0.5">{chain === 'ethereum' ? 'Ethereum Mainnet' : CHAIN_META[chain].name}</span>
           </div>
           <a href="https://github.com/Tobby2sure/lst-tracker" target="_blank" rel="noreferrer"
             className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
@@ -168,11 +178,34 @@ export default function EarningsDashboard() {
         <Card className="bg-white/[0.03] border-white/[0.07] shadow-xl">
           <CardContent className="pt-5 pb-5 space-y-4">
 
-            {/* Token tabs */}
+            {/* Chain selector */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(Object.keys(CHAIN_META) as SupportedChain[]).map(c => {
+                const cm = CHAIN_META[c];
+                const active = chain === c;
+                return (
+                  <button key={c} onClick={() => handleChainChange(c)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all
+                      ${active ? 'border-transparent text-white' : 'border-white/[0.08] text-zinc-500 hover:text-zinc-300 hover:border-white/[0.14] bg-transparent'}`}
+                    style={active ? { background: `${cm.color}22`, borderColor: `${cm.color}55`, color: cm.color } : {}}>
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cm.color }} />
+                    {cm.name}
+                  </button>
+                );
+              })}
+              {chain !== 'ethereum' && (
+                <a href={CHAIN_META[chain].bridgeUrl} target="_blank" rel="noreferrer"
+                  className="ml-auto flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">
+                  <ExternalLink className="w-3 h-3" />Bridge
+                </a>
+              )}
+            </div>
+
+            {/* Token tabs — filtered by chain support */}
             <div className="overflow-x-auto -mx-1 px-1 pb-0.5">
               <Tabs value={token} onValueChange={(v) => setToken(v as SupportedToken)}>
                 <TabsList className="bg-white/[0.04] border border-white/[0.08] h-9 p-0.5 flex w-max min-w-full gap-0.5">
-                  {(Object.keys(TOKEN_META) as SupportedToken[]).map(t => (
+                  {(CHAIN_TOKEN_SUPPORT[chain] as SupportedToken[]).map(t => (
                     <TabsTrigger key={t} value={t}
                       className="data-[state=active]:bg-white/10 data-[state=active]:shadow-none text-zinc-500 data-[state=active]:text-white text-xs sm:text-sm h-8 px-3 rounded-md flex-shrink-0 transition-all">
                       <span className="w-1.5 h-1.5 rounded-full mr-1.5 flex-shrink-0" style={{ background: TOKEN_META[t].color }} />
@@ -183,6 +216,11 @@ export default function EarningsDashboard() {
                 </TabsList>
               </Tabs>
             </div>
+            {chain !== 'ethereum' && (
+              <p className="text-[10px] text-zinc-600 -mt-1">
+                Rate is fetched from Ethereum mainnet oracle — balance from {CHAIN_META[chain].name}
+              </p>
+            )}
 
             {/* Wallet input row */}
             <div className="flex gap-2">
